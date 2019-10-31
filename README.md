@@ -7,8 +7,9 @@
 
 目标：规避openshift代理检查等  
 基准：官方 0.34 commit  c6d0717 aug 11,2018  
-- 版本号v34_191031_tls13 docker 191031  
+- 版本号v34_191101_tls13 docker 191101  
 - 使用go1.13.3编译服务端和客户端  
+- 相关名下包升级 golang.org templexxx klauspost gorilla google golang boltdb  
 - 客户端增加json配置项ForceHttp2Tls13，用于强制客户端使用tls13, 仅http2场景，服务端自适应 
 - 修改pid文件名  
 - 随机证书改为2048bit(1024)  
