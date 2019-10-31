@@ -7,8 +7,8 @@
 
 目标：规避openshift代理检查等  
 基准：官方 0.34 commit  c6d0717 aug 11,2018  
-- 版本号v34_M25G_190119_tls13 docker 190119  
-- 使用go112beta2编译服务端和客户端  
+- 版本号v34_191031_tls13 docker 191031  
+- 使用go1.13.3编译服务端和客户端  
 - 客户端增加json配置项ForceHttp2Tls13，用于强制客户端使用tls13, 仅http2场景，服务端自适应 
 - 修改pid文件名  
 - 随机证书改为2048bit(1024)  
@@ -34,7 +34,7 @@
 - 同步至官方c6d0717 0.34 阶段版  
 
 #### docker  
-<https://hub.docker.com/r/devcodewak/avonsg_openshift>  
+<https://hub.docker.com/r/devwak/avonsg_openshift>  
 
 
 #### Thanks : yinqiwen  
