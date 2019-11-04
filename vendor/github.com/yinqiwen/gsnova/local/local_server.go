@@ -80,6 +80,7 @@ func serveProxyConn(conn net.Conn, remoteHost, remotePort string, proxy *ProxyCo
 	}
 
 	isSocksProxy := false
+	isSocks5Proxy := false //my: disable socks5 sniff SNI
 	isHttpsProxy := false
 	isHttp11Proto := false
 	mitmEnabled := false
@@ -105,6 +106,7 @@ func serveProxyConn(conn net.Conn, remoteHost, remotePort string, proxy *ProxyCo
 		socksConn, sbufconn, err := socks.NewSocksConn(conn)
 		if nil == err {
 			isSocksProxy = true
+			isSocks5Proxy = socksConn.Version() == "socks5"
 			logger.Debug("Local proxy recv %s proxy conn to %s", socksConn.Version(), socksConn.Req.Target)
 			socksConn.Grant(&net.TCPAddr{
 				IP: net.ParseIP("0.0.0.0"), Port: 0})
@@ -137,9 +139,11 @@ func serveProxyConn(conn net.Conn, remoteHost, remotePort string, proxy *ProxyCo
 	}
 
 	trySniffDomain := false
-	if len(remoteHost) == 0 || (net.ParseIP(remoteHost) != nil && !helper.IsPrivateIP(remoteHost)) {
-		//this is a ip from local dns query
-		trySniffDomain = true
+	if !isSocks5Proxy {
+		if len(remoteHost) == 0 || (net.ParseIP(remoteHost) != nil && !helper.IsPrivateIP(remoteHost)) {
+			//this is a ip from local dns query
+			trySniffDomain = true
+		}
 	}
 
 	//1. sniff SNI first
