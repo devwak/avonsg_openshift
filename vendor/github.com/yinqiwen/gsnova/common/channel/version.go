@@ -1,3 +1,3 @@
 package channel
 
-const Version = "v34_191104_tls13"
+const Version = "v34_191206_tls13"

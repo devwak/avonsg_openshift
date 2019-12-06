@@ -232,7 +232,8 @@ func (i *HopServers) Set(value string) error {
 type ProxyChannelConfig struct {
 	Enable                 bool
 	Name                   string
-	ForceHttp2Tls13        bool //add tls13 or tls12
+	ForceTls13             string //add  auto, tls13, tls12
+	SecureVerify           bool   //== !InsecureSkipVerify
 	ServerList             []string
 	ConnsPerServer         int
 	SNI                    []string

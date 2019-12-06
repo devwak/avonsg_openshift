@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"crypto/tls"
 	"net/url"
 
 	"github.com/gorilla/websocket"
@@ -29,6 +30,26 @@ func (ws *WebsocketProxy) CreateMuxSession(server string, conf *channel.ProxyCha
 	wsDialer := &websocket.Dialer{}
 	wsDialer.NetDial = channel.NewDialByConf(conf, u.Scheme)
 	wsDialer.TLSClientConfig = channel.NewTLSConfig(conf)
+
+	if conf.ForceTls13 == "tls13" {
+		wsDialer.TLSClientConfig.MaxVersion = tls.VersionTLS13
+		wsDialer.TLSClientConfig.MinVersion = tls.VersionTLS13
+		wsDialer.TLSClientConfig.CipherSuites = []uint16{
+			tls.TLS_AES_128_GCM_SHA256,
+			tls.TLS_AES_256_GCM_SHA384,
+			tls.TLS_CHACHA20_POLY1305_SHA256,
+		}
+		logger.Info("wss ForceTls13, Now tls13 dial.")
+	} else if conf.ForceTls13 == "tls12" {
+		wsDialer.TLSClientConfig.MaxVersion = tls.VersionTLS12
+		wsDialer.TLSClientConfig.MinVersion = tls.VersionTLS12
+		logger.Info("wss ,tls12 dial.")
+	} else { // "" or "auto" or other
+		wsDialer.TLSClientConfig.MaxVersion = tls.VersionTLS13
+		wsDialer.TLSClientConfig.MinVersion = tls.VersionTLS12
+		logger.Info("wss ,tls12-tls13 auto dial.")
+	}
+
 	c, _, err := wsDialer.Dial(u.String(), nil)
 	if err != nil {
 		logger.Notice("dial websocket error:%v %v", err, u.String())

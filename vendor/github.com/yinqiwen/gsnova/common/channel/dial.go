@@ -20,7 +20,8 @@ import (
 
 func NewTLSConfig(conf *ProxyChannelConfig) *tls.Config {
 	tlscfg := &tls.Config{}
-	tlscfg.InsecureSkipVerify = true
+	logger.Info("SecureVerify : %v", conf.SecureVerify)
+	tlscfg.InsecureSkipVerify = !conf.SecureVerify //true
 	if len(conf.SNI) > 0 {
 		tlscfg.ServerName = conf.SNI[0]
 	}
@@ -110,7 +111,7 @@ func DialServerByConf(server string, conf *ProxyChannelConfig) (net.Conn, error)
 		case "tls":
 			fallthrough
 		case "http2":
-			if conf.ForceHttp2Tls13 {
+			if conf.ForceTls13 == "tls13" {
 				tlscfg.MaxVersion = tls.VersionTLS13
 				tlscfg.MinVersion = tls.VersionTLS13
 				tlscfg.CipherSuites = []uint16{
@@ -118,11 +119,15 @@ func DialServerByConf(server string, conf *ProxyChannelConfig) (net.Conn, error)
 					tls.TLS_AES_256_GCM_SHA384,
 					tls.TLS_CHACHA20_POLY1305_SHA256,
 				}
-				logger.Info("Http2 ForceHttp2Tls13, Now tls13 dial.")
-			} else {
+				logger.Info("Http2 or tls ForceTls13, Now tls13 dial.")
+			} else if conf.ForceTls13 == "tls12" {
 				tlscfg.MaxVersion = tls.VersionTLS12
 				tlscfg.MinVersion = tls.VersionTLS12
-				logger.Info("Http2 ,tls12 dial.")
+				logger.Info("Http2 or tls ,tls12 dial.")
+			} else { // "" or "auto" or other
+				tlscfg.MaxVersion = tls.VersionTLS13
+				tlscfg.MinVersion = tls.VersionTLS12
+				logger.Info("Http2 or tls ,tls12-tls13 auto dial.")
 			}
 			tlsconn := tls.Client(conn, tlscfg)
 			err = tlsconn.Handshake()

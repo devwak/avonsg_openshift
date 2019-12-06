@@ -61,8 +61,13 @@ func ReadWithoutComment(file string, commentPrefix string) ([]byte, error) {
 	for scanner.Scan() {
 		line := scanner.Text()
 		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, commentPrefix) {
-			total.WriteString(line)
+		if strings.HasPrefix(line, commentPrefix) {
+			continue
+		}
+		line = strings.Replace(line, "\t"+commentPrefix, " "+commentPrefix, -1)
+		sub := strings.Split(line, " "+commentPrefix)
+		if sub[0] != "" {
+			total.WriteString(sub[0])
 			total.WriteString("\n")
 		}
 	}
