@@ -271,6 +271,11 @@ START:
 	}
 	proxyChannelName = proxy.getProxyChannelByHost(protocol, remoteHost)
 
+	if proxyChannelName == "blocked" {
+		logger.Info(" **** blocked %s:%s", protocol, remoteHost)
+		return
+	}
+
 	if len(proxyChannelName) == 0 {
 		logger.Error("[ERROR]No proxy found for %s:%s", protocol, remoteHost)
 		return
@@ -401,7 +406,9 @@ START:
 				proxyReq.Header.Del("Proxy-Authorization")
 				err = proxyReq.Write(streamWriter)
 				if nil != err {
-					logger.Error("Failed to write http request for reason:%v", err)
+					if err != io.EOF {
+						logger.Error("Failed to write http request for reason:%v", err)
+					}
 					return
 				}
 			}

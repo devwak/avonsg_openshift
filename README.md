@@ -1,20 +1,21 @@
 
 
-### gsnova 0.34 修改版，用于openshift v3 docker部署  
+### gsnova 0.34 修改版，用于openshift v4 docker部署  
 
 
 #### 修改项  
 
 目标：规避openshift代理检查等  
 基准：官方 0.34 commit  c6d0717 aug 11,2018  
-- 版本号v34_191206_tls13 docker 191206  
+- 版本号v34_191213_tls13 docker 191213  
 - 使用go1.13.5编译服务端和客户端  
 - 相关名下包升级 golang.org templexxx klauspost gorilla google golang boltdb  
 - 修改本机socks5时,关闭sni sniff,适配tls为ip的应用场景  
 - 客户端增加json配置项ForceTls13，适用tls http2 wss，服务端自适应  
-- 选项"tls13" "tls12" 或 “auto", 不配置表示 tls12-tls13  
-- 客户端增加json配置项SecureVerify,用于tls相关校验域名证书   
+- 选项"tls13"或"tls12"，“auto"或不配置表示 tls12-tls13  
+- 客户端增加json配置项SecureVerify，用于tls相关校验域名证书   
 - json文件增加行尾注释，格式"\t//"或" //"  
+- PAC规则加入blocked，例{"Host":["ad.12306.cn"],"Remote":"blocked"}，用于ban ad域名  
 - 修改pid文件名  
 - 随机证书改为2048bit(1024)  
 - client模式时，显示心跳包延迟时间  
