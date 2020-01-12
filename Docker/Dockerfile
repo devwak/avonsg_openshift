@@ -1,12 +1,14 @@
-FROM golang:1.13.5-alpine3.10 as builder
+# FROM golang:1.13.5-alpine3.10 as builder
+FROM golang:alpine as builder
 
-RUN apk add --update git && \
+RUN apk add --update git upx && \
     go get -d github.com/devwak/avonsg_openshift/cmd  && \
-    go build -ldflags="-s -w" -o /go/bin/web github.com/devwak/avonsg_openshift/cmd
-
+    go build -ldflags="-s -w" -o /go/bin/web github.com/devwak/avonsg_openshift/cmd && \
+    upx  /go/bin/web
 
 	
-FROM alpine:3.10.3
+# FROM alpine:3.10.3
+FROM alpine:latest
 
 WORKDIR /bin/
 
