@@ -7,8 +7,9 @@
 
 目标：规避openshift代理检查等  
 基准：官方 0.34 commit  c6d0717 aug 11,2018  
-- 版本号v34_200410_tls13 docker 200410  
+- 版本号v34_200422_tls13 docker 200422  
 - 使用go1.14.2编译服务端和客户端,upx服务端  
+- stat 增加显示req Header等信息  
 - 升级外部依赖包至20200410,yinqiwen xtaci marten-seemann lucas-clemente名下包暂不升  
 - 修改本机socks5时,关闭sni sniff,适配tls为ip的应用场景  
 - 客户端增加json配置项ForceTls13，适用tls http2 wss，服务端自适应  

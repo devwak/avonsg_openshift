@@ -22,7 +22,18 @@ func indexCallback(w http.ResponseWriter, req *http.Request) {
 
 func statCallback(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(200)
-	fmt.Fprintf(w, "Version:    %s\n", channel.Version)
+	fmt.Fprintf(w, "%19s : %s\n\n", "Version", channel.Version)
+	fmt.Fprintf(w, "%19s : %s\n", "Method", req.Method)
+	fmt.Fprintf(w, "%19s : %s\n", "Proto", req.Proto)
+	fmt.Fprintf(w, "%19s : %s\n", "Host", req.Host)
+	fmt.Fprintf(w, "%19s : %s\n", "RemoteAddr", req.RemoteAddr)
+	fmt.Fprintf(w, "%19s : %s\n\n", "RequestURI", req.RequestURI)
+	//fmt.Fprintf(w, "%19s : %v\n", "TransferEncoding", req.TransferEncoding)
+	//fmt.Fprintf(w, "%19s : %v\n\n", "Close", req.Close)
+	for strKey, sstrValue := range req.Header { //map[string][]string
+		fmt.Fprintf(w, "%19s : %v\n", strKey, sstrValue)
+	}
+	fmt.Fprintf(w, "\n")
 	ots.Handle("stat", w)
 }
 
