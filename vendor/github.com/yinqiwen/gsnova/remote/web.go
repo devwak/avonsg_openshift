@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	//"strings"
 
@@ -14,6 +15,12 @@ import (
 	"github.com/yinqiwen/gsnova/common/logger"
 )
 
+var startTime time.Time
+
+func init() {
+	startTime = time.Now()
+}
+
 // hello world, the web server
 func indexCallback(w http.ResponseWriter, req *http.Request) {
 	//io.WriteString(w, strings.Replace(html, "${Version}", channel.Version, -1))
@@ -22,7 +29,15 @@ func indexCallback(w http.ResponseWriter, req *http.Request) {
 
 func statCallback(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(200)
-	fmt.Fprintf(w, "%19s : %s\n\n", "Version", channel.Version)
+	fmt.Fprintf(w, "%19s : %s\n", "Version", channel.Version)
+
+	ut := int(time.Since(startTime).Seconds())
+	days := ut / (60 * 60 * 24)
+	hours := ut / (60 * 60) % 24
+	minutes := ut / 60 % 60
+	second := ut % 60
+	fmt.Fprintf(w, "%19s : %dd%dh%dm%ds\n\n", "Uptime", days, hours, minutes, second)
+
 	fmt.Fprintf(w, "%19s : %s\n", "Method", req.Method)
 	fmt.Fprintf(w, "%19s : %s\n", "Proto", req.Proto)
 	fmt.Fprintf(w, "%19s : %s\n", "Host", req.Host)
