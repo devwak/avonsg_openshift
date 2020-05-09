@@ -194,7 +194,7 @@ func StartProxy() error {
 		enableTransparentSocketMark(GConf.TransparentMark)
 	}
 	dns.Init(&GConf.LocalDNS)
-	go initGFWList()
+	//go initGFWList()
 
 	logger.Notice("Allowed proxy channel with schema:%v", channel.AllowedSchema())
 	singalCh := make(chan bool, len(GConf.Channel))
@@ -229,6 +229,7 @@ func StartProxy() error {
 	go startAdminServer()
 	startLocalServers()
 	go clientShowServerStat(strFirstServer)
+	go initGFWList()
 	return nil
 }
 
