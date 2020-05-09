@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -81,6 +82,7 @@ func getGFWList() *gfwlist.GFWList {
 }
 
 func loadGFWList(hc *http.Client) error {
+	syncTime1 := time.Now()
 	hc.Transport.(*http.Transport).DisableKeepAlives = true
 	resp, err := hc.Get(GConf.GFWList.URL)
 	if nil != err {
@@ -95,11 +97,13 @@ func loadGFWList(hc *http.Client) error {
 		logger.Error("Failed to fetch GFWList with res:%v", resp)
 		return err
 	}
+	syncTime2 := time.Now()
 	body, err := ioutil.ReadAll(resp.Body)
 	if nil != err {
 		logger.Error("Failed to read GFWList with err:%v", err)
 		return err
 	}
+	logger.Info("GFWList time consuming : %v %v", time.Since(syncTime1), time.Since(syncTime2))
 	gfw, err := gfwlist.NewFromString(string(body), true)
 	if nil != err {
 		logger.Error("Invalid GFWList content:%v", err)
@@ -108,7 +112,7 @@ func loadGFWList(hc *http.Client) error {
 	for _, rule := range GConf.GFWList.UserRule {
 		gfw.Add(rule)
 	}
-	logger.Info("GFWList sync success.")
+	logger.Info("GFWList sync success")
 	localGFWList.Store(gfw)
 	return nil
 }
@@ -137,6 +141,49 @@ func initGFWList() {
 	}
 }
 
+func clientShowServerStat(strFirstServer string) {
+	if GConf.GFWList.DontShowServStat {
+		return
+	}
+	if strFirstServer == "" {
+		logger.Error("[-] strFirstServer empty.")
+		return
+	}
+	if !strings.Contains(strFirstServer, "://") {
+		logger.Error("[-] strFirstServer : %s", strFirstServer)
+		return
+	}
+
+	ss := strings.Split(strFirstServer, "://")
+	strFirstServer = "https://" + ss[1] + "/stat"
+
+	//logger.Info("url stat : %s", strFirstServer)
+
+	//Borrow the proxy set by gfwlist
+	hc, _ := channel.NewHTTPClient(&channel.ProxyChannelConfig{Proxy: GConf.GFWList.Proxy}, "http")
+	hc.Transport.(*http.Transport).DisableKeepAlives = true
+	resp, err := hc.Get(strFirstServer)
+	if nil != err {
+		logger.Error("Failed to fetch /stat")
+		if resp != nil && resp.Body != nil {
+			resp.Body.Close()
+		}
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		logger.Error("Failed to fetch /stat with res:%v", resp)
+		return
+	}
+	body, err := ioutil.ReadAll(resp.Body)
+	if nil != err {
+		logger.Error("Failed to read /stat with err:%v", err)
+		return
+	}
+	logger.Info("\n%s", string(body))
+
+}
+
 func StartProxy() error {
 	GConf.init()
 	logger.InitLogger(GConf.Log)
@@ -152,9 +199,13 @@ func StartProxy() error {
 	logger.Notice("Allowed proxy channel with schema:%v", channel.AllowedSchema())
 	singalCh := make(chan bool, len(GConf.Channel))
 	channelCount := 0
+	var strFirstServer string
 	for _, conf := range GConf.Channel {
 		if !conf.Enable {
 			continue
+		}
+		if strFirstServer == "" && conf.ServerList[0] != "direct://0.0.0.0:0" {
+			strFirstServer = conf.ServerList[0]
 		}
 		channel := channel.NewProxyChannel(&conf)
 		channel.Conf = conf
@@ -177,6 +228,7 @@ func StartProxy() error {
 
 	go startAdminServer()
 	startLocalServers()
+	go clientShowServerStat(strFirstServer)
 	return nil
 }
 

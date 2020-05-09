@@ -257,6 +257,7 @@ type GFWListConfig struct {
 	URL                   string
 	UserRule              []string
 	Proxy                 string
+	DontShowServStat      bool
 	RefershPeriodMiniutes int
 }
 
