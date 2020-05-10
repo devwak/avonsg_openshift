@@ -159,6 +159,7 @@ func clientShowServerStat(strFirstServer string) {
 
 	//logger.Info("url stat : %s", strFirstServer)
 
+	statTime1 := time.Now()
 	//Borrow the proxy set by gfwlist
 	hc, _ := channel.NewHTTPClient(&channel.ProxyChannelConfig{Proxy: GConf.GFWList.Proxy}, "http")
 	hc.Transport.(*http.Transport).DisableKeepAlives = true
@@ -175,12 +176,15 @@ func clientShowServerStat(strFirstServer string) {
 		logger.Error("Failed to fetch /stat with res:%v", resp)
 		return
 	}
+
+	statTime2 := time.Now()
 	body, err := ioutil.ReadAll(resp.Body)
 	if nil != err {
 		logger.Error("Failed to read /stat with err:%v", err)
 		return
 	}
 	logger.Info("\n%s", string(body))
+	logger.Info("Status  time consuming : %v %v", time.Since(statTime1), time.Since(statTime2))
 
 }
 
