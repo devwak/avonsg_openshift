@@ -1,4 +1,4 @@
-# FROM golang:1.14.2-alpine3.11 as builder
+# FROM golang:1.14.3-alpine3.11 as builder
 FROM golang:alpine as builder
 
 RUN apk add --update git upx && \
@@ -7,12 +7,14 @@ RUN apk add --update git upx && \
     upx  /go/bin/web
 
 	
-# FROM alpine:3.11.5
+# FROM alpine:3.11.6
 FROM alpine:latest
 
 WORKDIR /bin/
 
 COPY --from=builder /go/bin/web .
+
+RUN apk add --no-cache procps ca-certificates
 
 RUN web -version
 

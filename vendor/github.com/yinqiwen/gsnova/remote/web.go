@@ -36,7 +36,7 @@ func statCallback(w http.ResponseWriter, req *http.Request) {
 	hours := ut / (60 * 60) % 24
 	minutes := ut / 60 % 60
 	second := ut % 60
-	fmt.Fprintf(w, "%19s : %dd%dh%dm%ds\n\n", "Uptime", days, hours, minutes, second)
+	fmt.Fprintf(w, "%19s : %dd %dh %dm %ds\n\n", "Uptime", days, hours, minutes, second)
 
 	fmt.Fprintf(w, "%19s : %s\n", "Method", req.Method)
 	fmt.Fprintf(w, "%19s : %s\n", "Proto", req.Proto)

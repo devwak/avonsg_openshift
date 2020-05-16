@@ -3,6 +3,7 @@ package ots
 import (
 	"bytes"
 	"path/filepath"
+
 	//"encoding/json"
 	"fmt"
 	"io"
@@ -127,20 +128,23 @@ func blockProfile(args []string, c io.Writer) error {
 }
 
 func stat(args []string, c io.Writer) error {
-	fmt.Fprintf(c, "GOVersion: %s\n", runtime.Version())
-	fmt.Fprintf(c, "PID: %d\n", os.Getpid())
-	fmt.Fprintf(c, "PPID: %d\n", os.Getppid())
-	fmt.Fprintf(c, "NumCPU: %d\n", runtime.NumCPU())
-	fmt.Fprintf(c, "NumCgoCall: %d\n", runtime.NumCgoCall())
-	fmt.Fprintf(c, "NumGoroutine: %d\n", runtime.NumGoroutine())
-	fmt.Fprintf(c, "GOMAXPROCS: %d\n", runtime.GOMAXPROCS(0))
-	fmt.Fprintf(c, "GODEBUG: %s\n", os.Getenv("GODEBUG"))
+	fmt.Fprintf(c, "%19s : %s\n", "GOVersion", runtime.Version())
+	fmt.Fprintf(c, "%19s : %d\n", "PID", os.Getpid())
+	fmt.Fprintf(c, "%19s : %d\n", "PPID", os.Getppid())
+	fmt.Fprintf(c, "%19s : %d\n", "NumCPU", runtime.NumCPU())
+	fmt.Fprintf(c, "%19s : %d\n", "NumCgoCall", runtime.NumCgoCall())
+	fmt.Fprintf(c, "%19s : %d\n", "NumGoroutine", runtime.NumGoroutine())
+	fmt.Fprintf(c, "%19s : %d\n", "GOMAXPROCS", runtime.GOMAXPROCS(0))
+	fmt.Fprintf(c, "%19s : %v\n", "GODEBUG", os.Getenv("GODEBUG"))
 
 	var memstat runtime.MemStats
 	runtime.ReadMemStats(&memstat)
-	fmt.Fprintf(c, "HeapIdle: %d\n", memstat.HeapIdle)
-	fmt.Fprintf(c, "HeapInuse: %d\n", memstat.HeapInuse)
-	fmt.Fprintf(c, "HeapObjects: %d\n", memstat.HeapObjects)
+	fmt.Fprintf(c, "%19s : %dM\n", "Alloc", memstat.Alloc/1024/1024)
+	fmt.Fprintf(c, "%19s : %dM\n", "Sys", memstat.Sys/1024/1024)
+	fmt.Fprintf(c, "%19s : %dM\n", "HeapSys", memstat.HeapSys/1024/1024)
+	fmt.Fprintf(c, "%19s : %dM\n", "HeapIdle", memstat.HeapIdle/1024/1024)
+	fmt.Fprintf(c, "%19s : %dM\n", "HeapInuse", memstat.HeapInuse/1024/1024)
+	fmt.Fprintf(c, "%19s : %d\n", "HeapObjects", memstat.HeapObjects)
 	return nil
 }
 

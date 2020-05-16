@@ -7,8 +7,10 @@
 
 目标：规避openshift代理检查等  
 基准：官方 0.34 commit  c6d0717 aug 11,2018  
-- 版本号v34_200510_tls13 docker 200510  
-- 使用go1.14.2编译服务端和客户端,upx服务端  
+- 版本号v34_200516_tls13 docker 200516  
+- 使用go1.14.3编译服务端和客户端,upx服务端  
+- Docker增加procps ca-certificates  
+- CipherSuites tls ver 客户端和服务端安全约束  
 - stat 增加显示uptime, req的Header等信息,客户端启动显示server stat  
 - 升级外部依赖包至20200410,yinqiwen xtaci marten-seemann lucas-clemente名下包暂不升  
 - 修改本机socks5时,关闭sni sniff,适配tls为ip的应用场景  
