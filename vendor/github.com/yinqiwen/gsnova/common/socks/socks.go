@@ -514,6 +514,7 @@ func socks5ReadCommand(rw *bufio.ReadWriter, req *SocksRequest) (err error) {
 
 	case socksAtypeDomainName:
 		var alen byte
+		var address net.IP
 		if alen, err = socksReadByte(rw.Reader); err != nil {
 			err = newTemporaryNetError("socks5ReadCommand: Failed to read domain name length: %s", err)
 			return
@@ -528,6 +529,13 @@ func socks5ReadCommand(rw *bufio.ReadWriter, req *SocksRequest) (err error) {
 			return
 		}
 		host = string(addr)
+		//++++ ipv6 address
+		address = net.ParseIP(host)
+		if address != nil {
+			if len(address) == net.IPv6len {
+				host = fmt.Sprintf("[%s]", address.String())
+			}
+		}
 
 	case socksAtypeV6:
 		var rawAddr []byte

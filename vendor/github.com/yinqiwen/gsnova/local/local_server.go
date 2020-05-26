@@ -232,13 +232,28 @@ func serveProxyConn(conn net.Conn, remoteHost, remotePort string, proxy *ProxyCo
 				return
 			}
 			//log.Printf("Host:%s %v", initialHTTPReq.Host, initialHTTPReq.URL)
-			if strings.Contains(initialHTTPReq.Host, ":") {
-				remoteHost, remotePort, _ = net.SplitHostPort(initialHTTPReq.Host)
+			//++++
+			if strings.Count(initialHTTPReq.Host, ":") >= 2 { //ipv6
+				if strings.Contains(initialHTTPReq.Host, "]:") {
+					remoteHost, remotePort, _ = net.SplitHostPort(initialHTTPReq.Host)
+				} else {
+					remoteHost = initialHTTPReq.Host
+					remotePort = "80"
+					if strings.EqualFold(initialHTTPReq.Method, "CONNECT") {
+						remotePort = "443"
+					}
+				}
+				remoteHost = strings.TrimLeft(remoteHost, "[")
+				remoteHost = strings.TrimRight(remoteHost, "]")
 			} else {
-				remoteHost = initialHTTPReq.Host
-				remotePort = "80"
-				if strings.EqualFold(initialHTTPReq.Method, "CONNECT") {
-					remotePort = "443"
+				if strings.Contains(initialHTTPReq.Host, ":") {
+					remoteHost, remotePort, _ = net.SplitHostPort(initialHTTPReq.Host)
+				} else {
+					remoteHost = initialHTTPReq.Host
+					remotePort = "80"
+					if strings.EqualFold(initialHTTPReq.Method, "CONNECT") {
+						remotePort = "443"
+					}
 				}
 			}
 			if strings.EqualFold(initialHTTPReq.Method, "CONNECT") {
