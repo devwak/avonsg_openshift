@@ -7,8 +7,8 @@
 
 目标：规避openshift代理检查等  
 基准：官方 0.34 commit  c6d0717 aug 11,2018  
-- 版本号v34_200527_tls13 docker 200527  
-- 使用go1.14.3编译服务端和客户端,upx服务端  
+- 版本号v34_200604_tls13 docker 200604  
+- 使用go1.14.4编译服务端和客户端,upx服务端  
 - 客户端时http及socks5对ipv6地址支持修复  
 - Docker增加procps ca-certificates  
 - CipherSuites tls ver 客户端和服务端安全约束  
