@@ -7,15 +7,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vmihailenco/msgpack/v4/codes"
+	"github.com/vmihailenco/msgpack/v5/msgpcode"
 )
 
 const (
 	sortMapKeysFlag uint32 = 1 << iota
-	structAsArrayFlag
-	encodeUsingJSONFlag
+	arrayEncodedStructsFlag
 	useCompactIntsFlag
 	useCompactFloatsFlag
+	useInternedStringsFlag
+	omitEmptyFlag
 )
 
 type writer interface {
@@ -25,23 +26,16 @@ type writer interface {
 
 type byteWriter struct {
 	io.Writer
-
-	buf [1]byte
 }
 
-func newByteWriter(w io.Writer) *byteWriter {
-	bw := new(byteWriter)
-	bw.Reset(w)
-	return bw
+func newByteWriter(w io.Writer) byteWriter {
+	return byteWriter{
+		Writer: w,
+	}
 }
 
-func (bw *byteWriter) Reset(w io.Writer) {
-	bw.Writer = w
-}
-
-func (bw *byteWriter) WriteByte(c byte) error {
-	bw.buf[0] = c
-	_, err := bw.Write(bw.buf[:])
+func (bw byteWriter) WriteByte(c byte) error {
+	_, err := bw.Write([]byte{c})
 	return err
 }
 
@@ -53,9 +47,18 @@ var encPool = sync.Pool{
 	},
 }
 
+func GetEncoder() *Encoder {
+	return encPool.Get().(*Encoder)
+}
+
+func PutEncoder(enc *Encoder) {
+	enc.w = nil
+	encPool.Put(enc)
+}
+
 // Marshal returns the MessagePack encoding of v.
 func Marshal(v interface{}) ([]byte, error) {
-	enc := encPool.Get().(*Encoder)
+	enc := GetEncoder()
 
 	var buf bytes.Buffer
 	enc.Reset(&buf)
@@ -63,7 +66,7 @@ func Marshal(v interface{}) ([]byte, error) {
 	err := enc.Encode(v)
 	b := buf.Bytes()
 
-	encPool.Put(enc)
+	PutEncoder(enc)
 
 	if err != nil {
 		return nil, err
@@ -77,9 +80,10 @@ type Encoder struct {
 	buf     []byte
 	timeBuf []byte
 
-	intern map[string]int
+	dict map[string]int
 
-	flags uint32
+	flags     uint32
+	structTag string
 }
 
 // NewEncoder returns a new encoder that writes to w.
@@ -91,31 +95,45 @@ func NewEncoder(w io.Writer) *Encoder {
 	return e
 }
 
+// Writer returns the Encoder's writer.
+func (e *Encoder) Writer() io.Writer {
+	return e.w
+}
+
+// Reset discards any buffered data, resets all state, and switches the writer to write to w.
 func (e *Encoder) Reset(w io.Writer) {
+	e.ResetDict(w, nil)
+}
+
+// ResetDict is like Reset, but also resets the dict.
+func (e *Encoder) ResetDict(w io.Writer, dict map[string]int) {
+	e.resetWriter(w)
+	e.flags = 0
+	e.structTag = ""
+	e.dict = dict
+}
+
+func (e *Encoder) WithDict(dict map[string]int, fn func(*Encoder) error) error {
+	oldDict := e.dict
+	e.dict = dict
+	err := fn(e)
+	e.dict = oldDict
+	return err
+}
+
+func (e *Encoder) resetWriter(w io.Writer) {
 	if bw, ok := w.(writer); ok {
 		e.w = bw
-	} else if bw, ok := e.w.(*byteWriter); ok {
-		bw.Reset(w)
 	} else {
 		e.w = newByteWriter(w)
 	}
-
-	for k := range e.intern {
-		delete(e.intern, k)
-	}
-
-	//TODO:
-	//e.sortMapKeys = false
-	//e.structAsArray = false
-	//e.useJSONTag = false
-	//e.useCompact = false
 }
 
-// SortMapKeys causes the Encoder to encode map keys in increasing order.
+// SetSortMapKeys causes the Encoder to encode map keys in increasing order.
 // Supported map types are:
 //   - map[string]string
 //   - map[string]interface{}
-func (e *Encoder) SortMapKeys(on bool) *Encoder {
+func (e *Encoder) SetSortMapKeys(on bool) *Encoder {
 	if on {
 		e.flags |= sortMapKeysFlag
 	} else {
@@ -124,36 +142,38 @@ func (e *Encoder) SortMapKeys(on bool) *Encoder {
 	return e
 }
 
-// StructAsArray causes the Encoder to encode Go structs as msgpack arrays.
-func (e *Encoder) StructAsArray(on bool) *Encoder {
-	if on {
-		e.flags |= structAsArrayFlag
-	} else {
-		e.flags &= ^structAsArrayFlag
-	}
-	return e
+// SetCustomStructTag causes the Encoder to use a custom struct tag as
+// fallback option if there is no msgpack tag.
+func (e *Encoder) SetCustomStructTag(tag string) {
+	e.structTag = tag
 }
 
-// UseJSONTag causes the Encoder to use json struct tag as fallback option
-// if there is no msgpack tag.
-func (e *Encoder) UseJSONTag(on bool) *Encoder {
+// SetOmitEmpty causes the Encoder to omit empty values by default.
+func (e *Encoder) SetOmitEmpty(on bool) {
 	if on {
-		e.flags |= encodeUsingJSONFlag
+		e.flags |= omitEmptyFlag
 	} else {
-		e.flags &= ^encodeUsingJSONFlag
+		e.flags &= ^omitEmptyFlag
 	}
-	return e
+}
+
+// UseArrayEncodedStructs causes the Encoder to encode Go structs as msgpack arrays.
+func (e *Encoder) UseArrayEncodedStructs(on bool) {
+	if on {
+		e.flags |= arrayEncodedStructsFlag
+	} else {
+		e.flags &= ^arrayEncodedStructsFlag
+	}
 }
 
 // UseCompactEncoding causes the Encoder to chose the most compact encoding.
 // For example, it allows to encode small Go int64 as msgpack int8 saving 7 bytes.
-func (e *Encoder) UseCompactEncoding(on bool) *Encoder {
+func (e *Encoder) UseCompactInts(on bool) {
 	if on {
 		e.flags |= useCompactIntsFlag
 	} else {
 		e.flags &= ^useCompactIntsFlag
 	}
-	return e
 }
 
 // UseCompactFloats causes the Encoder to chose a compact integer encoding
@@ -166,6 +186,15 @@ func (e *Encoder) UseCompactFloats(on bool) {
 	}
 }
 
+// UseInternedStrings causes the Encoder to intern strings.
+func (e *Encoder) UseInternedStrings(on bool) {
+	if on {
+		e.flags |= useInternedStringsFlag
+	} else {
+		e.flags &= ^useInternedStringsFlag
+	}
+}
+
 func (e *Encoder) Encode(v interface{}) error {
 	switch v := v.(type) {
 	case nil:
@@ -175,11 +204,11 @@ func (e *Encoder) Encode(v interface{}) error {
 	case []byte:
 		return e.EncodeBytes(v)
 	case int:
-		return e.encodeInt64Cond(int64(v))
+		return e.EncodeInt(int64(v))
 	case int64:
 		return e.encodeInt64Cond(v)
 	case uint:
-		return e.encodeUint64Cond(uint64(v))
+		return e.EncodeUint(uint64(v))
 	case uint64:
 		return e.encodeUint64Cond(v)
 	case bool:
@@ -211,22 +240,22 @@ func (e *Encoder) EncodeValue(v reflect.Value) error {
 }
 
 func (e *Encoder) EncodeNil() error {
-	return e.writeCode(codes.Nil)
+	return e.writeCode(msgpcode.Nil)
 }
 
 func (e *Encoder) EncodeBool(value bool) error {
 	if value {
-		return e.writeCode(codes.True)
+		return e.writeCode(msgpcode.True)
 	}
-	return e.writeCode(codes.False)
+	return e.writeCode(msgpcode.False)
 }
 
 func (e *Encoder) EncodeDuration(d time.Duration) error {
 	return e.EncodeInt(int64(d))
 }
 
-func (e *Encoder) writeCode(c codes.Code) error {
-	return e.w.WriteByte(byte(c))
+func (e *Encoder) writeCode(c byte) error {
+	return e.w.WriteByte(c)
 }
 
 func (e *Encoder) write(b []byte) error {

@@ -1,5 +1,6 @@
-# FROM golang:1.14.3-alpine3.11 as builder
 FROM golang:alpine as builder
+
+ENV GO111MODULE=off
 
 RUN apk add --update git upx && \
     go get -d github.com/devwak/avonsg_openshift/cmd  && \
@@ -7,7 +8,6 @@ RUN apk add --update git upx && \
     upx  /go/bin/web
 
 	
-# FROM alpine:3.11.6
 FROM alpine:latest
 
 WORKDIR /bin/

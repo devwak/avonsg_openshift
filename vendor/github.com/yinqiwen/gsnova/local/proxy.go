@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/fsnotify/fsnotify"
+	//"github.com/fsnotify/fsnotify"
 	"github.com/yinqiwen/gotoolkit/gfwlist"
 	"github.com/yinqiwen/gsnova/common/channel"
 	"github.com/yinqiwen/gsnova/common/dns"
@@ -51,19 +51,19 @@ func loadHostsConf(conf string) error {
 	return err
 }
 
-func watchConf(watcher *fsnotify.Watcher) {
-	for {
-		select {
-		case event := <-watcher.Events:
-			logger.Debug("fsnotify event:%v", event)
-			if (event.Op & fsnotify.Write) == fsnotify.Write {
-				loadClientConf(event.Name)
-			}
-		case err := <-watcher.Errors:
-			logger.Error("error:%v", err)
-		}
-	}
-}
+// func watchConf(watcher *fsnotify.Watcher) {
+// 	for {
+// 		select {
+// 		case event := <-watcher.Events:
+// 			logger.Debug("fsnotify event:%v", event)
+// 			if (event.Op & fsnotify.Write) == fsnotify.Write {
+// 				loadClientConf(event.Name)
+// 			}
+// 		case err := <-watcher.Errors:
+// 			logger.Error("error:%v", err)
+// 		}
+// 	}
+// }
 
 type ProxyOptions struct {
 	Config    string
@@ -242,16 +242,16 @@ func Start(options ProxyOptions) error {
 	hostsConf := options.Hosts
 	proxyHome = options.Home
 
-	if options.WatchConf {
-		confWatcher, err := fsnotify.NewWatcher()
-		if err != nil {
-			logger.Fatal("%v", err)
-			return err
-		}
-		confWatcher.Add(clientConf)
-		//confWatcher.Add(hostsConf)
-		go watchConf(confWatcher)
-	}
+	// if options.WatchConf {
+	// 	confWatcher, err := fsnotify.NewWatcher()
+	// 	if err != nil {
+	// 		logger.Fatal("%v", err)
+	// 		return err
+	// 	}
+	// 	confWatcher.Add(clientConf)
+	// 	//confWatcher.Add(hostsConf)
+	// 	go watchConf(confWatcher)
+	// }
 
 	if len(clientConf) > 0 {
 		err := loadClientConf(clientConf)

@@ -1,72 +1,89 @@
 # MessagePack encoding for Golang
 
-[![Build Status](https://travis-ci.org/vmihailenco/msgpack.svg?branch=v2)](https://travis-ci.org/vmihailenco/msgpack)
-[![GoDoc](https://godoc.org/github.com/vmihailenco/msgpack?status.svg)](https://godoc.org/github.com/vmihailenco/msgpack)
+[![Build Status](https://travis-ci.org/vmihailenco/msgpack.svg)](https://travis-ci.org/vmihailenco/msgpack)
+[![PkgGoDev](https://pkg.go.dev/badge/github.com/vmihailenco/msgpack/v5)](https://pkg.go.dev/github.com/vmihailenco/msgpack/v5)
+[![Documentation](https://img.shields.io/badge/msgpack-documentation-informational)](https://msgpack.uptrace.dev/)
+[![Chat](https://discordapp.com/api/guilds/752070105847955518/widget.png)](https://discord.gg/rWtp5Aj)
 
-Supports:
+msgpack is brought to you by :star: [**uptrace/uptrace**](https://github.com/uptrace/uptrace).
+Uptrace is an open source and blazingly fast **distributed tracing** backend powered by
+OpenTelemetry and ClickHouse. Give it a star as well!
+
+## Resources
+
+- [Documentation](https://msgpack.uptrace.dev)
+- [Chat](https://discord.gg/rWtp5Aj)
+- [Reference](https://pkg.go.dev/github.com/vmihailenco/msgpack/v5)
+- [Examples](https://pkg.go.dev/github.com/vmihailenco/msgpack/v5#pkg-examples)
+
+Other projects you may like:
+
+- [Bun](https://bun.uptrace.dev) - fast and simple SQL client for PostgreSQL, MySQL, and SQLite.
+- [BunRouter](https://bunrouter.uptrace.dev/) - fast and flexible HTTP router for Go.
+
+## Features
+
 - Primitives, arrays, maps, structs, time.Time and interface{}.
-- Appengine *datastore.Key and datastore.Cursor.
-- [CustomEncoder](https://godoc.org/github.com/vmihailenco/msgpack#example-CustomEncoder)/CustomDecoder interfaces for custom encoding.
-- [Extensions](https://godoc.org/github.com/vmihailenco/msgpack#example-RegisterExt) to encode type information.
+- Appengine \*datastore.Key and datastore.Cursor.
+- [CustomEncoder]/[CustomDecoder] interfaces for custom encoding.
+- [Extensions](https://pkg.go.dev/github.com/vmihailenco/msgpack/v5#example-RegisterExt) to encode
+  type information.
 - Renaming fields via `msgpack:"my_field_name"` and alias via `msgpack:"alias:another_name"`.
-- Omitting individual empty fields via `msgpack:",omitempty"` tag or all [empty fields in a struct](https://godoc.org/github.com/vmihailenco/msgpack#example-Marshal--OmitEmpty).
-- [Map keys sorting](https://godoc.org/github.com/vmihailenco/msgpack#Encoder.SortMapKeys).
-- Encoding/decoding all [structs as arrays](https://godoc.org/github.com/vmihailenco/msgpack#Encoder.UseArrayForStructs) or [individual structs](https://godoc.org/github.com/vmihailenco/msgpack#example-Marshal--AsArray).
-- [Encoder.UseJSONTag](https://godoc.org/github.com/vmihailenco/msgpack#Encoder.UseJSONTag) with [Decoder.UseJSONTag](https://godoc.org/github.com/vmihailenco/msgpack#Decoder.UseJSONTag) can turn msgpack into drop-in replacement for JSON.
-- Simple but very fast and efficient [queries](https://godoc.org/github.com/vmihailenco/msgpack#example-Decoder-Query).
+- Omitting individual empty fields via `msgpack:",omitempty"` tag or all
+  [empty fields in a struct](https://pkg.go.dev/github.com/vmihailenco/msgpack/v5#example-Marshal-OmitEmpty).
+- [Map keys sorting](https://pkg.go.dev/github.com/vmihailenco/msgpack/v5#Encoder.SetSortMapKeys).
+- Encoding/decoding all
+  [structs as arrays](https://pkg.go.dev/github.com/vmihailenco/msgpack/v5#Encoder.UseArrayEncodedStructs)
+  or
+  [individual structs](https://pkg.go.dev/github.com/vmihailenco/msgpack/v5#example-Marshal-AsArray).
+- [Encoder.SetCustomStructTag] with [Decoder.SetCustomStructTag] can turn msgpack into drop-in
+  replacement for any tag.
+- Simple but very fast and efficient
+  [queries](https://pkg.go.dev/github.com/vmihailenco/msgpack/v5#example-Decoder.Query).
 
-API docs: https://godoc.org/github.com/vmihailenco/msgpack.
-Examples: https://godoc.org/github.com/vmihailenco/msgpack#pkg-examples.
+[customencoder]: https://pkg.go.dev/github.com/vmihailenco/msgpack/v5#CustomEncoder
+[customdecoder]: https://pkg.go.dev/github.com/vmihailenco/msgpack/v5#CustomDecoder
+[encoder.setcustomstructtag]:
+  https://pkg.go.dev/github.com/vmihailenco/msgpack/v5#Encoder.SetCustomStructTag
+[decoder.setcustomstructtag]:
+  https://pkg.go.dev/github.com/vmihailenco/msgpack/v5#Decoder.SetCustomStructTag
 
 ## Installation
 
-This project uses [Go Modules](https://github.com/golang/go/wiki/Modules) and semantic import versioning since v4:
+msgpack supports 2 last Go versions and requires support for
+[Go modules](https://github.com/golang/go/wiki/Modules). So make sure to initialize a Go module:
 
-``` shell
+```shell
 go mod init github.com/my/repo
-go get github.com/vmihailenco/msgpack/v4
+```
+
+And then install msgpack/v5 (note _v5_ in the import; omitting it is a popular mistake):
+
+```shell
+go get github.com/vmihailenco/msgpack/v5
 ```
 
 ## Quickstart
 
-``` go
-import "github.com/vmihailenco/msgpack/v4"
+```go
+import "github.com/vmihailenco/msgpack/v5"
 
 func ExampleMarshal() {
-	type Item struct {
-		Foo string
-	}
+    type Item struct {
+        Foo string
+    }
 
-	b, err := msgpack.Marshal(&Item{Foo: "bar"})
-	if err != nil {
-		panic(err)
-	}
+    b, err := msgpack.Marshal(&Item{Foo: "bar"})
+    if err != nil {
+        panic(err)
+    }
 
-	var item Item
-	err = msgpack.Unmarshal(b, &item)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println(item.Foo)
-	// Output: bar
+    var item Item
+    err = msgpack.Unmarshal(b, &item)
+    if err != nil {
+        panic(err)
+    }
+    fmt.Println(item.Foo)
+    // Output: bar
 }
 ```
-
-## Benchmark
-
-```
-BenchmarkStructVmihailencoMsgpack-4   	  200000	     12814 ns/op	    2128 B/op	      26 allocs/op
-BenchmarkStructUgorjiGoMsgpack-4      	  100000	     17678 ns/op	    3616 B/op	      70 allocs/op
-BenchmarkStructUgorjiGoCodec-4        	  100000	     19053 ns/op	    7346 B/op	      23 allocs/op
-BenchmarkStructJSON-4                 	   20000	     69438 ns/op	    7864 B/op	      26 allocs/op
-BenchmarkStructGOB-4                  	   10000	    104331 ns/op	   14664 B/op	     278 allocs/op
-```
-
-## Howto
-
-Please go through [examples](https://godoc.org/github.com/vmihailenco/msgpack#pkg-examples) to get an idea how to use this package.
-
-## See also
-
-- [Golang PostgreSQL ORM](https://github.com/go-pg/pg)
-- [Golang message task queue](https://github.com/vmihailenco/taskq)

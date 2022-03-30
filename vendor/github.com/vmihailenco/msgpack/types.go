@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/vmihailenco/tagparser"
+	"github.com/vmihailenco/tagparser/v2"
 )
 
 var errorType = reflect.TypeOf((*error)(nil)).Elem()
@@ -27,6 +27,11 @@ var (
 	binaryUnmarshalerType = reflect.TypeOf((*encoding.BinaryUnmarshaler)(nil)).Elem()
 )
 
+var (
+	textMarshalerType   = reflect.TypeOf((*encoding.TextMarshaler)(nil)).Elem()
+	textUnmarshalerType = reflect.TypeOf((*encoding.TextUnmarshaler)(nil)).Elem()
+)
+
 type (
 	encoderFunc func(*Encoder, reflect.Value) error
 	decoderFunc func(*Decoder, reflect.Value) error
@@ -39,7 +44,7 @@ var (
 
 // Register registers encoder and decoder functions for a value.
 // This is low level API and in most cases you should prefer implementing
-// Marshaler/CustomEncoder and Unmarshaler/CustomDecoder interfaces.
+// CustomEncoder/CustomDecoder or Marshaler/Unmarshaler interfaces.
 func Register(value interface{}, enc encoderFunc, dec decoderFunc) {
 	typ := reflect.TypeOf(value)
 	if enc != nil {
@@ -52,30 +57,33 @@ func Register(value interface{}, enc encoderFunc, dec decoderFunc) {
 
 //------------------------------------------------------------------------------
 
-var (
-	structs     = newStructCache(false)
-	jsonStructs = newStructCache(true)
-)
+const defaultStructTag = "msgpack"
+
+var structs = newStructCache()
 
 type structCache struct {
 	m sync.Map
-
-	useJSONTag bool
 }
 
-func newStructCache(useJSONTag bool) *structCache {
-	return &structCache{
-		useJSONTag: useJSONTag,
-	}
+type structCacheKey struct {
+	tag string
+	typ reflect.Type
 }
 
-func (m *structCache) Fields(typ reflect.Type) *fields {
-	if v, ok := m.m.Load(typ); ok {
+func newStructCache() *structCache {
+	return new(structCache)
+}
+
+func (m *structCache) Fields(typ reflect.Type, tag string) *fields {
+	key := structCacheKey{tag: tag, typ: typ}
+
+	if v, ok := m.m.Load(key); ok {
 		return v.(*fields)
 	}
 
-	fs := getFields(typ, m.useJSONTag)
-	m.m.Store(typ, fs)
+	fs := getFields(typ, tag)
+	m.m.Store(key, fs)
+
 	return fs
 }
 
@@ -89,17 +97,17 @@ type field struct {
 	decoder   decoderFunc
 }
 
-func (f *field) Omit(strct reflect.Value) bool {
-	v, isNil := fieldByIndex(strct, f.index)
-	if isNil {
+func (f *field) Omit(strct reflect.Value, forced bool) bool {
+	v, ok := fieldByIndex(strct, f.index)
+	if !ok {
 		return true
 	}
-	return f.omitEmpty && isEmptyValue(v)
+	return (f.omitEmpty || forced) && isEmptyValue(v)
 }
 
 func (f *field) EncodeValue(e *Encoder, strct reflect.Value) error {
-	v, isNil := fieldByIndex(strct, f.index)
-	if isNil {
+	v, ok := fieldByIndex(strct, f.index)
+	if !ok {
 		return e.EncodeNil()
 	}
 	return f.encoder(e, v)
@@ -144,15 +152,15 @@ func (fs *fields) warnIfFieldExists(name string) {
 	}
 }
 
-func (fs *fields) OmitEmpty(strct reflect.Value) []*field {
-	if !fs.hasOmitEmpty {
+func (fs *fields) OmitEmpty(strct reflect.Value, forced bool) []*field {
+	if !fs.hasOmitEmpty && !forced {
 		return fs.List
 	}
 
 	fields := make([]*field, 0, len(fs.List))
 
 	for _, f := range fs.List {
-		if !f.Omit(strct) {
+		if !f.Omit(strct, forced) {
 			fields = append(fields, f)
 		}
 	}
@@ -160,16 +168,16 @@ func (fs *fields) OmitEmpty(strct reflect.Value) []*field {
 	return fields
 }
 
-func getFields(typ reflect.Type, useJSONTag bool) *fields {
+func getFields(typ reflect.Type, fallbackTag string) *fields {
 	fs := newFields(typ)
 
 	var omitEmpty bool
 	for i := 0; i < typ.NumField(); i++ {
 		f := typ.Field(i)
 
-		tagStr := f.Tag.Get("msgpack")
-		if useJSONTag && tagStr == "" {
-			tagStr = f.Tag.Get("json")
+		tagStr := f.Tag.Get(defaultStructTag)
+		if tagStr == "" && fallbackTag != "" {
+			tagStr = f.Tag.Get(fallbackTag)
 		}
 
 		tag := tagparser.Parse(tagStr)
@@ -178,9 +186,7 @@ func getFields(typ reflect.Type, useJSONTag bool) *fields {
 		}
 
 		if f.Name == "_msgpack" {
-			if tag.HasOption("asArray") {
-				fs.AsArray = true
-			}
+			fs.AsArray = tag.HasOption("as_array") || tag.HasOption("asArray")
 			if tag.HasOption("omitempty") {
 				omitEmpty = true
 			}
@@ -199,11 +205,11 @@ func getFields(typ reflect.Type, useJSONTag bool) *fields {
 		if tag.HasOption("intern") {
 			switch f.Type.Kind() {
 			case reflect.Interface:
-				field.encoder = encodeInternInterfaceValue
-				field.decoder = decodeInternInterfaceValue
+				field.encoder = encodeInternedInterfaceValue
+				field.decoder = decodeInternedInterfaceValue
 			case reflect.String:
-				field.encoder = encodeInternStringValue
-				field.decoder = decodeInternStringValue
+				field.encoder = encodeInternedStringValue
+				field.decoder = decodeInternedStringValue
 			default:
 				err := fmt.Errorf("msgpack: intern strings are not supported on %s", f.Type)
 				panic(err)
@@ -220,9 +226,9 @@ func getFields(typ reflect.Type, useJSONTag bool) *fields {
 		if f.Anonymous && !tag.HasOption("noinline") {
 			inline := tag.HasOption("inline")
 			if inline {
-				inlineFields(fs, f.Type, field, useJSONTag)
+				inlineFields(fs, f.Type, field, fallbackTag)
 			} else {
-				inline = shouldInline(fs, f.Type, field, useJSONTag)
+				inline = shouldInline(fs, f.Type, field, fallbackTag)
 			}
 
 			if inline {
@@ -255,8 +261,8 @@ func init() {
 	decodeStructValuePtr = reflect.ValueOf(decodeStructValue).Pointer()
 }
 
-func inlineFields(fs *fields, typ reflect.Type, f *field, useJSONTag bool) {
-	inlinedFields := getFields(typ, useJSONTag).List
+func inlineFields(fs *fields, typ reflect.Type, f *field, tag string) {
+	inlinedFields := getFields(typ, tag).List
 	for _, field := range inlinedFields {
 		if _, ok := fs.Map[field.name]; ok {
 			// Don't inline shadowed fields.
@@ -267,7 +273,7 @@ func inlineFields(fs *fields, typ reflect.Type, f *field, useJSONTag bool) {
 	}
 }
 
-func shouldInline(fs *fields, typ reflect.Type, f *field, useJSONTag bool) bool {
+func shouldInline(fs *fields, typ reflect.Type, f *field, tag string) bool {
 	var encoder encoderFunc
 	var decoder decoderFunc
 
@@ -292,7 +298,7 @@ func shouldInline(fs *fields, typ reflect.Type, f *field, useJSONTag bool) bool 
 		return false
 	}
 
-	inlinedFields := getFields(typ, useJSONTag).List
+	inlinedFields := getFields(typ, tag).List
 	for _, field := range inlinedFields {
 		if _, ok := fs.Map[field.name]; ok {
 			// Don't auto inline if there are shadowed fields.
@@ -307,8 +313,26 @@ func shouldInline(fs *fields, typ reflect.Type, f *field, useJSONTag bool) bool 
 	return true
 }
 
+type isZeroer interface {
+	IsZero() bool
+}
+
 func isEmptyValue(v reflect.Value) bool {
-	switch v.Kind() {
+	kind := v.Kind()
+
+	for kind == reflect.Interface {
+		if v.IsNil() {
+			return true
+		}
+		v = v.Elem()
+		kind = v.Kind()
+	}
+
+	if z, ok := v.Interface().(isZeroer); ok {
+		return nilable(kind) && v.IsNil() || z.IsZero()
+	}
+
+	switch kind {
 	case reflect.Array, reflect.Map, reflect.Slice, reflect.String:
 		return v.Len() == 0
 	case reflect.Bool:
@@ -319,22 +343,23 @@ func isEmptyValue(v reflect.Value) bool {
 		return v.Uint() == 0
 	case reflect.Float32, reflect.Float64:
 		return v.Float() == 0
-	case reflect.Interface, reflect.Ptr:
+	case reflect.Ptr:
 		return v.IsNil()
+	default:
+		return false
 	}
-	return false
 }
 
-func fieldByIndex(v reflect.Value, index []int) (_ reflect.Value, isNil bool) {
+func fieldByIndex(v reflect.Value, index []int) (_ reflect.Value, ok bool) {
 	if len(index) == 1 {
-		return v.Field(index[0]), false
+		return v.Field(index[0]), true
 	}
 
 	for i, idx := range index {
 		if i > 0 {
 			if v.Kind() == reflect.Ptr {
 				if v.IsNil() {
-					return v, true
+					return v, false
 				}
 				v = v.Elem()
 			}
@@ -342,7 +367,7 @@ func fieldByIndex(v reflect.Value, index []int) (_ reflect.Value, isNil bool) {
 		v = v.Field(idx)
 	}
 
-	return v, false
+	return v, true
 }
 
 func fieldByIndexAlloc(v reflect.Value, index []int) reflect.Value {
@@ -353,7 +378,7 @@ func fieldByIndexAlloc(v reflect.Value, index []int) reflect.Value {
 	for i, idx := range index {
 		if i > 0 {
 			var ok bool
-			v, ok = indirectNew(v)
+			v, ok = indirectNil(v)
 			if !ok {
 				return v
 			}
@@ -364,7 +389,7 @@ func fieldByIndexAlloc(v reflect.Value, index []int) reflect.Value {
 	return v
 }
 
-func indirectNew(v reflect.Value) (reflect.Value, bool) {
+func indirectNil(v reflect.Value) (reflect.Value, bool) {
 	if v.Kind() == reflect.Ptr {
 		if v.IsNil() {
 			if !v.CanSet() {

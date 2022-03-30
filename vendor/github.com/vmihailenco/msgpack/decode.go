@@ -10,12 +10,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vmihailenco/msgpack/v4/codes"
+	"github.com/vmihailenco/msgpack/v5/msgpcode"
 )
 
 const (
-	looseIfaceFlag uint32 = 1 << iota
-	decodeUsingJSONFlag
+	looseInterfaceDecodingFlag uint32 = 1 << iota
 	disallowUnknownFieldsFlag
 )
 
@@ -38,19 +37,27 @@ var decPool = sync.Pool{
 	},
 }
 
+func GetDecoder() *Decoder {
+	return decPool.Get().(*Decoder)
+}
+
+func PutDecoder(dec *Decoder) {
+	dec.r = nil
+	dec.s = nil
+	decPool.Put(dec)
+}
+
+//------------------------------------------------------------------------------
+
 // Unmarshal decodes the MessagePack-encoded data and stores the result
 // in the value pointed to by v.
 func Unmarshal(data []byte, v interface{}) error {
-	dec := decPool.Get().(*Decoder)
+	dec := GetDecoder()
 
-	if r, ok := dec.r.(*bytes.Reader); ok {
-		r.Reset(data)
-	} else {
-		dec.Reset(bytes.NewReader(data))
-	}
+	dec.Reset(bytes.NewReader(data))
 	err := dec.Decode(v)
 
-	decPool.Put(dec)
+	PutDecoder(dec)
 
 	return err
 }
@@ -61,18 +68,18 @@ type Decoder struct {
 	s   io.ByteScanner
 	buf []byte
 
-	extLen int
-	rec    []byte // accumulates read data if not nil
+	rec []byte // accumulates read data if not nil
 
-	intern        []string
-	flags         uint32
-	decodeMapFunc func(*Decoder) (interface{}, error)
+	dict       []string
+	flags      uint32
+	structTag  string
+	mapDecoder func(*Decoder) (interface{}, error)
 }
 
 // NewDecoder returns a new decoder that reads from r.
 //
 // The decoder introduces its own buffering and may read data from r
-// beyond the MessagePack values requested. Buffering can be disabled
+// beyond the requested msgpack values. Buffering can be disabled
 // by passing a reader that implements io.ByteScanner interface.
 func NewDecoder(r io.Reader) *Decoder {
 	d := new(Decoder)
@@ -83,62 +90,74 @@ func NewDecoder(r io.Reader) *Decoder {
 // Reset discards any buffered data, resets all state, and switches the buffered
 // reader to read from r.
 func (d *Decoder) Reset(r io.Reader) {
+	d.ResetDict(r, nil)
+}
+
+// ResetDict is like Reset, but also resets the dict.
+func (d *Decoder) ResetDict(r io.Reader, dict []string) {
+	d.resetReader(r)
+	d.flags = 0
+	d.structTag = ""
+	d.mapDecoder = nil
+	d.dict = dict
+}
+
+func (d *Decoder) WithDict(dict []string, fn func(*Decoder) error) error {
+	oldDict := d.dict
+	d.dict = dict
+	err := fn(d)
+	d.dict = oldDict
+	return err
+}
+
+func (d *Decoder) resetReader(r io.Reader) {
 	if br, ok := r.(bufReader); ok {
 		d.r = br
 		d.s = br
-	} else if br, ok := d.r.(*bufio.Reader); ok {
-		br.Reset(r)
 	} else {
 		br := bufio.NewReader(r)
 		d.r = br
 		d.s = br
 	}
-
-	if d.intern != nil {
-		d.intern = d.intern[:0]
-	}
-
-	//TODO:
-	//d.useLoose = false
-	//d.useJSONTag = false
-	//d.disallowUnknownFields = false
-	//d.decodeMapFunc = nil
 }
 
-func (d *Decoder) SetDecodeMapFunc(fn func(*Decoder) (interface{}, error)) {
-	d.decodeMapFunc = fn
+func (d *Decoder) SetMapDecoder(fn func(*Decoder) (interface{}, error)) {
+	d.mapDecoder = fn
 }
 
-// UseDecodeInterfaceLoose causes decoder to use DecodeInterfaceLoose
+// UseLooseInterfaceDecoding causes decoder to use DecodeInterfaceLoose
 // to decode msgpack value into Go interface{}.
-func (d *Decoder) UseDecodeInterfaceLoose(on bool) *Decoder {
+func (d *Decoder) UseLooseInterfaceDecoding(on bool) {
 	if on {
-		d.flags |= looseIfaceFlag
+		d.flags |= looseInterfaceDecodingFlag
 	} else {
-		d.flags &= ^looseIfaceFlag
+		d.flags &= ^looseInterfaceDecodingFlag
 	}
-	return d
 }
 
-// UseJSONTag causes the Decoder to use json struct tag as fallback option
+// SetCustomStructTag causes the decoder to use the supplied tag as a fallback option
 // if there is no msgpack tag.
-func (d *Decoder) UseJSONTag(on bool) *Decoder {
-	if on {
-		d.flags |= decodeUsingJSONFlag
-	} else {
-		d.flags &= ^decodeUsingJSONFlag
-	}
-	return d
+func (d *Decoder) SetCustomStructTag(tag string) {
+	d.structTag = tag
 }
 
 // DisallowUnknownFields causes the Decoder to return an error when the destination
 // is a struct and the input contains object keys which do not match any
 // non-ignored, exported fields in the destination.
-func (d *Decoder) DisallowUnknownFields() {
-	if true {
+func (d *Decoder) DisallowUnknownFields(on bool) {
+	if on {
 		d.flags |= disallowUnknownFieldsFlag
 	} else {
 		d.flags &= ^disallowUnknownFieldsFlag
+	}
+}
+
+// UseInternedStrings enables support for decoding interned strings.
+func (d *Decoder) UseInternedStrings(on bool) {
+	if on {
+		d.flags |= useInternedStringsFlag
+	} else {
+		d.flags &= ^useInternedStringsFlag
 	}
 }
 
@@ -250,12 +269,22 @@ func (d *Decoder) Decode(v interface{}) error {
 		return errors.New("msgpack: Decode(nil)")
 	}
 	if vv.Kind() != reflect.Ptr {
-		return fmt.Errorf("msgpack: Decode(nonsettable %T)", v)
+		return fmt.Errorf("msgpack: Decode(non-pointer %T)", v)
 	}
+	if vv.IsNil() {
+		return fmt.Errorf("msgpack: Decode(non-settable %T)", v)
+	}
+
 	vv = vv.Elem()
-	if !vv.IsValid() {
-		return fmt.Errorf("msgpack: Decode(nonsettable %T)", v)
+	if vv.Kind() == reflect.Interface {
+		if !vv.IsNil() {
+			vv = vv.Elem()
+			if vv.Kind() != reflect.Ptr {
+				return fmt.Errorf("msgpack: Decode(non-pointer %s)", vv.Type().String())
+			}
+		}
 	}
+
 	return d.DecodeValue(vv)
 }
 
@@ -269,7 +298,7 @@ func (d *Decoder) DecodeMulti(v ...interface{}) error {
 }
 
 func (d *Decoder) decodeInterfaceCond() (interface{}, error) {
-	if d.flags&looseIfaceFlag != 0 {
+	if d.flags&looseInterfaceDecodingFlag != 0 {
 		return d.DecodeInterfaceLoose()
 	}
 	return d.DecodeInterface()
@@ -285,7 +314,7 @@ func (d *Decoder) DecodeNil() error {
 	if err != nil {
 		return err
 	}
-	if c != codes.Nil {
+	if c != msgpcode.Nil {
 		return fmt.Errorf("msgpack: invalid code=%x decoding nil", c)
 	}
 	return nil
@@ -311,11 +340,14 @@ func (d *Decoder) DecodeBool() (bool, error) {
 	return d.bool(c)
 }
 
-func (d *Decoder) bool(c codes.Code) (bool, error) {
-	if c == codes.False {
+func (d *Decoder) bool(c byte) (bool, error) {
+	if c == msgpcode.Nil {
 		return false, nil
 	}
-	if c == codes.True {
+	if c == msgpcode.False {
+		return false, nil
+	}
+	if c == msgpcode.True {
 		return true, nil
 	}
 	return false, fmt.Errorf("msgpack: invalid code=%x decoding bool", c)
@@ -349,63 +381,63 @@ func (d *Decoder) DecodeInterface() (interface{}, error) {
 		return nil, err
 	}
 
-	if codes.IsFixedNum(c) {
+	if msgpcode.IsFixedNum(c) {
 		return int8(c), nil
 	}
-	if codes.IsFixedMap(c) {
+	if msgpcode.IsFixedMap(c) {
 		err = d.s.UnreadByte()
 		if err != nil {
 			return nil, err
 		}
-		return d.DecodeMap()
+		return d.decodeMapDefault()
 	}
-	if codes.IsFixedArray(c) {
+	if msgpcode.IsFixedArray(c) {
 		return d.decodeSlice(c)
 	}
-	if codes.IsFixedString(c) {
+	if msgpcode.IsFixedString(c) {
 		return d.string(c)
 	}
 
 	switch c {
-	case codes.Nil:
+	case msgpcode.Nil:
 		return nil, nil
-	case codes.False, codes.True:
+	case msgpcode.False, msgpcode.True:
 		return d.bool(c)
-	case codes.Float:
+	case msgpcode.Float:
 		return d.float32(c)
-	case codes.Double:
+	case msgpcode.Double:
 		return d.float64(c)
-	case codes.Uint8:
+	case msgpcode.Uint8:
 		return d.uint8()
-	case codes.Uint16:
+	case msgpcode.Uint16:
 		return d.uint16()
-	case codes.Uint32:
+	case msgpcode.Uint32:
 		return d.uint32()
-	case codes.Uint64:
+	case msgpcode.Uint64:
 		return d.uint64()
-	case codes.Int8:
+	case msgpcode.Int8:
 		return d.int8()
-	case codes.Int16:
+	case msgpcode.Int16:
 		return d.int16()
-	case codes.Int32:
+	case msgpcode.Int32:
 		return d.int32()
-	case codes.Int64:
+	case msgpcode.Int64:
 		return d.int64()
-	case codes.Bin8, codes.Bin16, codes.Bin32:
+	case msgpcode.Bin8, msgpcode.Bin16, msgpcode.Bin32:
 		return d.bytes(c, nil)
-	case codes.Str8, codes.Str16, codes.Str32:
+	case msgpcode.Str8, msgpcode.Str16, msgpcode.Str32:
 		return d.string(c)
-	case codes.Array16, codes.Array32:
+	case msgpcode.Array16, msgpcode.Array32:
 		return d.decodeSlice(c)
-	case codes.Map16, codes.Map32:
+	case msgpcode.Map16, msgpcode.Map32:
 		err = d.s.UnreadByte()
 		if err != nil {
 			return nil, err
 		}
-		return d.DecodeMap()
-	case codes.FixExt1, codes.FixExt2, codes.FixExt4, codes.FixExt8, codes.FixExt16,
-		codes.Ext8, codes.Ext16, codes.Ext32:
-		return d.extInterface(c)
+		return d.decodeMapDefault()
+	case msgpcode.FixExt1, msgpcode.FixExt2, msgpcode.FixExt4, msgpcode.FixExt8, msgpcode.FixExt16,
+		msgpcode.Ext8, msgpcode.Ext16, msgpcode.Ext32:
+		return d.decodeInterfaceExt(c)
 	}
 
 	return 0, fmt.Errorf("msgpack: unknown code %x decoding interface{}", c)
@@ -415,55 +447,55 @@ func (d *Decoder) DecodeInterface() (interface{}, error) {
 //   - int8, int16, and int32 are converted to int64,
 //   - uint8, uint16, and uint32 are converted to uint64,
 //   - float32 is converted to float64.
+//   - []byte is converted to string.
 func (d *Decoder) DecodeInterfaceLoose() (interface{}, error) {
 	c, err := d.readCode()
 	if err != nil {
 		return nil, err
 	}
 
-	if codes.IsFixedNum(c) {
+	if msgpcode.IsFixedNum(c) {
 		return int64(int8(c)), nil
 	}
-	if codes.IsFixedMap(c) {
+	if msgpcode.IsFixedMap(c) {
 		err = d.s.UnreadByte()
 		if err != nil {
 			return nil, err
 		}
-		return d.DecodeMap()
+		return d.decodeMapDefault()
 	}
-	if codes.IsFixedArray(c) {
+	if msgpcode.IsFixedArray(c) {
 		return d.decodeSlice(c)
 	}
-	if codes.IsFixedString(c) {
+	if msgpcode.IsFixedString(c) {
 		return d.string(c)
 	}
 
 	switch c {
-	case codes.Nil:
+	case msgpcode.Nil:
 		return nil, nil
-	case codes.False, codes.True:
+	case msgpcode.False, msgpcode.True:
 		return d.bool(c)
-	case codes.Float, codes.Double:
+	case msgpcode.Float, msgpcode.Double:
 		return d.float64(c)
-	case codes.Uint8, codes.Uint16, codes.Uint32, codes.Uint64:
+	case msgpcode.Uint8, msgpcode.Uint16, msgpcode.Uint32, msgpcode.Uint64:
 		return d.uint(c)
-	case codes.Int8, codes.Int16, codes.Int32, codes.Int64:
+	case msgpcode.Int8, msgpcode.Int16, msgpcode.Int32, msgpcode.Int64:
 		return d.int(c)
-	case codes.Bin8, codes.Bin16, codes.Bin32:
-		return d.bytes(c, nil)
-	case codes.Str8, codes.Str16, codes.Str32:
+	case msgpcode.Str8, msgpcode.Str16, msgpcode.Str32,
+		msgpcode.Bin8, msgpcode.Bin16, msgpcode.Bin32:
 		return d.string(c)
-	case codes.Array16, codes.Array32:
+	case msgpcode.Array16, msgpcode.Array32:
 		return d.decodeSlice(c)
-	case codes.Map16, codes.Map32:
+	case msgpcode.Map16, msgpcode.Map32:
 		err = d.s.UnreadByte()
 		if err != nil {
 			return nil, err
 		}
-		return d.DecodeMap()
-	case codes.FixExt1, codes.FixExt2, codes.FixExt4, codes.FixExt8, codes.FixExt16,
-		codes.Ext8, codes.Ext16, codes.Ext32:
-		return d.extInterface(c)
+		return d.decodeMapDefault()
+	case msgpcode.FixExt1, msgpcode.FixExt2, msgpcode.FixExt4, msgpcode.FixExt8, msgpcode.FixExt16,
+		msgpcode.Ext8, msgpcode.Ext16, msgpcode.Ext32:
+		return d.decodeInterfaceExt(c)
 	}
 
 	return 0, fmt.Errorf("msgpack: unknown code %x decoding interface{}", c)
@@ -476,63 +508,78 @@ func (d *Decoder) Skip() error {
 		return err
 	}
 
-	if codes.IsFixedNum(c) {
+	if msgpcode.IsFixedNum(c) {
 		return nil
 	}
-	if codes.IsFixedMap(c) {
+	if msgpcode.IsFixedMap(c) {
 		return d.skipMap(c)
 	}
-	if codes.IsFixedArray(c) {
+	if msgpcode.IsFixedArray(c) {
 		return d.skipSlice(c)
 	}
-	if codes.IsFixedString(c) {
+	if msgpcode.IsFixedString(c) {
 		return d.skipBytes(c)
 	}
 
 	switch c {
-	case codes.Nil, codes.False, codes.True:
+	case msgpcode.Nil, msgpcode.False, msgpcode.True:
 		return nil
-	case codes.Uint8, codes.Int8:
+	case msgpcode.Uint8, msgpcode.Int8:
 		return d.skipN(1)
-	case codes.Uint16, codes.Int16:
+	case msgpcode.Uint16, msgpcode.Int16:
 		return d.skipN(2)
-	case codes.Uint32, codes.Int32, codes.Float:
+	case msgpcode.Uint32, msgpcode.Int32, msgpcode.Float:
 		return d.skipN(4)
-	case codes.Uint64, codes.Int64, codes.Double:
+	case msgpcode.Uint64, msgpcode.Int64, msgpcode.Double:
 		return d.skipN(8)
-	case codes.Bin8, codes.Bin16, codes.Bin32:
+	case msgpcode.Bin8, msgpcode.Bin16, msgpcode.Bin32:
 		return d.skipBytes(c)
-	case codes.Str8, codes.Str16, codes.Str32:
+	case msgpcode.Str8, msgpcode.Str16, msgpcode.Str32:
 		return d.skipBytes(c)
-	case codes.Array16, codes.Array32:
+	case msgpcode.Array16, msgpcode.Array32:
 		return d.skipSlice(c)
-	case codes.Map16, codes.Map32:
+	case msgpcode.Map16, msgpcode.Map32:
 		return d.skipMap(c)
-	case codes.FixExt1, codes.FixExt2, codes.FixExt4, codes.FixExt8, codes.FixExt16,
-		codes.Ext8, codes.Ext16, codes.Ext32:
+	case msgpcode.FixExt1, msgpcode.FixExt2, msgpcode.FixExt4, msgpcode.FixExt8, msgpcode.FixExt16,
+		msgpcode.Ext8, msgpcode.Ext16, msgpcode.Ext32:
 		return d.skipExt(c)
 	}
 
 	return fmt.Errorf("msgpack: unknown code %x", c)
 }
 
+func (d *Decoder) DecodeRaw() (RawMessage, error) {
+	d.rec = make([]byte, 0)
+	if err := d.Skip(); err != nil {
+		return nil, err
+	}
+	msg := RawMessage(d.rec)
+	d.rec = nil
+	return msg, nil
+}
+
 // PeekCode returns the next MessagePack code without advancing the reader.
-// Subpackage msgpack/codes contains list of available codes.
-func (d *Decoder) PeekCode() (codes.Code, error) {
+// Subpackage msgpack/codes defines the list of available msgpcode.
+func (d *Decoder) PeekCode() (byte, error) {
 	c, err := d.s.ReadByte()
 	if err != nil {
 		return 0, err
 	}
-	return codes.Code(c), d.s.UnreadByte()
+	return c, d.s.UnreadByte()
+}
+
+// ReadFull reads exactly len(buf) bytes into the buf.
+func (d *Decoder) ReadFull(buf []byte) error {
+	_, err := readN(d.r, buf, len(buf))
+	return err
 }
 
 func (d *Decoder) hasNilCode() bool {
 	code, err := d.PeekCode()
-	return err == nil && code == codes.Nil
+	return err == nil && code == msgpcode.Nil
 }
 
-func (d *Decoder) readCode() (codes.Code, error) {
-	d.extLen = 0
+func (d *Decoder) readCode() (byte, error) {
 	c, err := d.s.ReadByte()
 	if err != nil {
 		return 0, err
@@ -540,7 +587,7 @@ func (d *Decoder) readCode() (codes.Code, error) {
 	if d.rec != nil {
 		d.rec = append(d.rec, c)
 	}
-	return codes.Code(c), nil
+	return c, nil
 }
 
 func (d *Decoder) readFull(b []byte) error {
@@ -549,7 +596,6 @@ func (d *Decoder) readFull(b []byte) error {
 		return err
 	}
 	if d.rec != nil {
-		//TODO: read directly into d.rec?
 		d.rec = append(d.rec, b...)
 	}
 	return nil
@@ -562,7 +608,7 @@ func (d *Decoder) readN(n int) ([]byte, error) {
 		return nil, err
 	}
 	if d.rec != nil {
-		//TODO: read directly into d.rec?
+		// TODO: read directly into d.rec?
 		d.rec = append(d.rec, d.buf...)
 	}
 	return d.buf, nil
