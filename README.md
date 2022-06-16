@@ -7,7 +7,8 @@
 
 目标：规避openshift代理检查等  
 基准：官方 0.34 commit  c6d0717 aug 11,2018  
-- 版本号v34_220330_tls13 docker 220330  
+- 版本号v34_220616_tls13 docker 220616  
+- 修正 host.json 增加ipv6支持  
 - 使用go1.18编译服务端和客户端,upx服务端  
 - Docker增加GO111MODULE=off 来兼容编译 vendor  
 - 去掉fsnotify模块，规避异常  

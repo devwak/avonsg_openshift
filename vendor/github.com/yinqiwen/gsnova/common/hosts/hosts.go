@@ -38,7 +38,7 @@ func getHost(host string) (string, bool) {
 	if exist {
 		s := mapping.Get()
 		ok := true
-		if !strings.Contains(s, ".") { //alials name
+		if !strings.Contains(s, ".") && !strings.Contains(s, ":") { //alials name
 			s, ok = getHost(s)
 		}
 		return s, ok
@@ -47,7 +47,7 @@ func getHost(host string) (string, bool) {
 		if nil != m.hostRegex {
 			if m.hostRegex.MatchString(host) {
 				s := m.Get()
-				if !strings.Contains(s, ".") { //alials name
+				if !strings.Contains(s, ".") && !strings.Contains(s, ":") { //alials name
 					s, ok = getHost(s)
 				} else {
 					hostMappingTable[host] = m
