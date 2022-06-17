@@ -7,12 +7,12 @@
 
 目标：规避openshift代理检查等  
 基准：官方 0.34 commit  c6d0717 aug 11,2018  
-- 版本号v34_220616_tls13 docker 220616  
+- 版本号v34_220617_tls13 docker 220617  
 - 修正 host.json 增加ipv6支持  
+- 升级外部依赖包至20220616,yinqiwen xtaci marten-seemann lucas-clemente名下包暂不升  
 - 使用go1.18编译服务端和客户端,upx服务端  
 - Docker增加GO111MODULE=off 来兼容编译 vendor  
 - 去掉fsnotify模块，规避异常  
-- 升级外部依赖包至20220330,yinqiwen xtaci marten-seemann lucas-clemente名下包暂不升  
 - 客户端时http及socks5对ipv6地址支持修复  
 - Docker增加procps ca-certificates  
 - CipherSuites tls ver 客户端和服务端安全约束  
